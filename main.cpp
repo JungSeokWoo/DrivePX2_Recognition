@@ -43,7 +43,10 @@ int main()
 
     // Lane Detector initialize
     px2LD px2LDObj(&px2CamObj);
-    px2LDObj.Init(0.3f);
+//    px2LDObj.Init(0.3f);
+    px2LDObj.Init(0.3f,
+                  "/home/nvidia/swjung/git/px2Recog/data/invRectMap.xml",
+                  "/home/nvidia/swjung/git/px2Recog/data/ipmMat.xml");
 
     while(1)
     {
@@ -88,6 +91,39 @@ int main()
                                  outputLDColorPerLane,
                                  outputLDPositionNamePerLane,
                                  outputLDTypeNamePerLane);
+
+        vector< vector<float> > outputLDEqsPerLane;
+
+        cv::Mat topViewImg = cv::Mat::zeros(500,500, CV_8UC3);
+
+        for(uint32_t laneIdx = 0U;  laneIdx < outputLDPtsPerLane.size(); laneIdx++)
+        {
+            vector<dwVector2f> outputLDPtsRectified = px2LDObj.DistortList2RectifiedList(outputLDPtsPerLane[laneIdx]);
+            vector<dwVector2f> outputLDPtsTopview = px2LDObj.RectifiedList2TopviewList(outputLDPtsRectified);
+
+            if (outputLDPtsTopview.size() < 4)
+                continue;
+
+            vector<float> outputLDEqs = px2LDObj.TopviewList2Eq(outputLDPtsTopview);
+            outputLDEqsPerLane.push_back(outputLDEqs);
+
+
+            for(uint y = 0; y < 500 ; y++)
+            {
+                float x = outputLDEqs[0] + (float)y*outputLDEqs[1] + (float)y*y*outputLDEqs[2] + (float)y*y*y*outputLDEqs[3];
+                int xInt = (int) x;
+
+                if((xInt >= 0) && (xInt < topViewImg.cols))
+                {
+                    topViewImg.at<cv::Vec3b>(y, xInt)[0] = cv::saturate_cast<uchar>(outputLDColorPerLane[laneIdx].z*255);
+                    topViewImg.at<cv::Vec3b>(y, xInt)[1] = cv::saturate_cast<uchar>(outputLDColorPerLane[laneIdx].y*255);
+                    topViewImg.at<cv::Vec3b>(y, xInt)[2] = cv::saturate_cast<uchar>(outputLDColorPerLane[laneIdx].x*255);
+                }
+            }
+        }
+
+        cv::imshow("topView", topViewImg);
+        cv::waitKey(1);
 
         /****************************************************/
 

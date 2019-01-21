@@ -54,6 +54,7 @@ GLESv2
 nvinfer
 nvcaffe_parser
 pthread
+armadillo
 )
 
 aux_source_directory(. SRC_LIST)

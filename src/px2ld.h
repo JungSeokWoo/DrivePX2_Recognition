@@ -3,6 +3,8 @@
 
 #include "px2camlib.h"
 
+#include "fittingAlgorithm.h"
+
 #include <dw/dnn/LaneNet.h>
 #include <dw/laneperception/LaneDetector.h>
 
@@ -12,6 +14,7 @@ public:
     ~px2LD();
 
     void Init(float32_t thresVal);
+    void Init(float32_t thresVal, string invRectMapFilePath, string ipmMatrixFilePath);
 
     void DetectLanesByDW(dwImageCUDA* dwLDInputImg,
                          vector<vector<dwVector2f> >& outputLDPtsPerLane,
@@ -24,8 +27,18 @@ public:
     void DetectLanesByHarmony(dwImageCUDA* dwLDInputImg,
                              float* trtLDInputImg);
 
+    vector<dwVector2f> DistortList2RectifiedList(vector<dwVector2f> distortionCoordList);
+
+    vector<dwVector2f> RectifiedList2TopviewList(vector<dwVector2f> rectifiedCoordList);
+
+    vector<float> TopviewList2Eq(vector<dwVector2f> topviewList);
+
 private:
     dwVector4f GetLaneMarkingColor(dwLanePositionType positionType);
+
+    dwVector2f Dist2Rect(dwVector2f distortionCoord);
+
+    dwVector2f Rect2Topview(dwVector2f rectifiedCoord);
 
 private:
     px2Cam* mPx2Cam;
@@ -40,6 +53,13 @@ private:
     const dwImageCUDA* mLDInputImg;
 
     float32_t mLaneColor[4];
+
+    cv::Mat mInvMap1;
+    cv::Mat mInvMap2;
+
+    cv::Mat mIPMMat;
+
+    LMSFit laneFitter;
 };
 
 #endif // PX2LD_H
