@@ -42,13 +42,14 @@ void GpuMat2Img(uint8_t* imgGpuMatOri, float* imgTrt, uint8_t* imgGpuMat,
 px2Cam::px2Cam()
 {
     mArguments = ProgramArguments(
-    {           ProgramArguments::Option_t("camera-type", "ar0231-rccb-ae-sf3324"),
-                ProgramArguments::Option_t("custom-board", "1"),
+    {           ProgramArguments::Option_t("camera-type", "ar0231-rccb-bae-sf3324"),
+                ProgramArguments::Option_t("custom-board", "0"),
                 ProgramArguments::Option_t("csi-port", "ab"),
                 ProgramArguments::Option_t("write-file", ""),
                 ProgramArguments::Option_t("serializer-type", "h264"),
                 ProgramArguments::Option_t("serializer-bitrate", "8000000"),
                 ProgramArguments::Option_t("serializer-framerate", "30"),
+                ProgramArguments::Option_t("fifo-size", "3"),
                 ProgramArguments::Option_t("slave", "0")
     });
 }
@@ -85,22 +86,36 @@ void px2Cam::ReleaseModules()
     dwRelease(&mContext);
 }
 
-bool px2Cam::Init(imgCropParameters imgCropParams,
-                  displayParameters dispParams,
-                  dwTegraMode tegraMode,
-                  const char* writePath)
+bool px2Cam::Init(camInputParameters camInputParams,
+                       imgCropParameters imgCropParams,
+                       displayParameters dispParams,
+                       dwTegraMode tegraMode,
+                       const char* writePath)
 {
     mArguments.set("write-file", writePath);
-    return Init(imgCropParams, dispParams, tegraMode);
+    return Init(camInputParams,imgCropParams, dispParams, tegraMode);
 }
 
-bool px2Cam::Init(imgCropParameters imgCropParams,
+bool px2Cam::Init(camInputParameters camInputParams,
+                  imgCropParameters imgCropParams,
                   displayParameters dispParams,
                   dwTegraMode tegraMode)
 {
-    // Set Resize and ROI info
+    mCamInputParams = camInputParams;
 
+    // Set Resize and ROI info
     mRecordCamera = !mArguments.get("write-file").empty();
+    if(!((mCamInputParams.camInputMode == GMSL_CAM_YUV) || (mCamInputParams.camInputMode == GMSL_CAM_RAW)))
+    {
+        mRecordCamera = false;
+    }
+
+    if(mRecordCamera)
+    {
+        mArguments.set("fifo-size","6");
+    }
+
+
     mTegraMode = tegraMode;
     mDispParams = dispParams;
 
@@ -194,10 +209,10 @@ void px2Cam::CoordTrans_Resize2Ori(int xIn, int yIn, int& xOut, int& yOut)
     yOut = (int)(yIn/mResizeRatio);
 }
 
-void px2Cam::CoordTrans_ResizeAndCrop2Ori(int xIn, int yIn, int &xOut, int &yOut)
+void px2Cam::CoordTrans_ResizeAndCrop2Ori(float xIn, float yIn, float &xOut, float &yOut)
 {
-    xOut = (int)((xIn + mROIx)/mResizeRatio);
-    yOut = (int)((yIn + mROIy)/mResizeRatio);
+    xOut = (float)((xIn + mROIx)/mResizeRatio);
+    yOut = (float)((yIn + mROIy)/mResizeRatio);
 }
 
 void px2Cam::InitGL()
@@ -285,36 +300,40 @@ bool px2Cam::InitSensors()
     dwSensorParams sensorParams;
     memset(&sensorParams, 0, sizeof(dwSensorParams));
 
-    std::string parameterString = std::string("output-format=yuv,fifo-size=3");
+    std::string parameterString;
 
-    parameterString += std::string(",camera-type=") + mArguments.get("camera-type").c_str();
-    parameterString += std::string(",csi-port=") + mArguments.get("csi-port").c_str();
-    parameterString += std::string(",slave=") + mArguments.get("slave").c_str();
-
-    if (mArguments.get("custom-board").compare("1") == 0)
+    if(mCamInputParams.camInputMode == GMSL_CAM_YUV)
     {
-        // it's a custom board, use the board specific extra configurations
-        parameterString             += ",custom-board=1";
+        parameterString = std::string("output-format=yuv");
+        parameterString += std::string(",fifo-size=") + mArguments.get("fifo-size").c_str();
+        parameterString += std::string(",camera-type=") + mArguments.get("camera-type").c_str();
+        parameterString += std::string(",csi-port=") + mArguments.get("csi-port").c_str();
+        parameterString += std::string(",slave=") + mArguments.get("slave").c_str();
 
-        mArguments.addOption("custom-config");
-        mArguments.set("custom-config",
-                            "board=E2379a-c01,"
-                            "moduleName=ref_max9286_96705_ar0231rccbsf3324ae,"
-                            "resolution=1920x1208,"
-                            "inputFormat=raw12,"
-                            "sensorNum=1,"
-                            "interface=csi-ab,"
-                            "i2cDevice=7,"
-                            "desAddr=0x48,"
-                            "brdcstSerAddr=0x40,"
-                            "brdcstSensorAddr=0x10");
+        sensorParams.parameters = parameterString.c_str();
+        sensorParams.protocol = "camera.gmsl";
+    }
+    else if(mCamInputParams.camInputMode == GMSL_CAM_RAW)
+    {
+        parameterString = std::string("output-format=raw");
+        parameterString += std::string(",fifo-size=") + mArguments.get("fifo-size").c_str();
+        parameterString += std::string(",camera-type=") + mArguments.get("camera-type").c_str();
+        parameterString += std::string(",csi-port=") + mArguments.get("csi-port").c_str();
+        parameterString += std::string(",slave=") + mArguments.get("slave").c_str();
+        parameterString += std::string(",format=") + "raw";
 
-        sensorParams.auxiliarydata  = mArguments.get("custom-config").c_str();
+        sensorParams.parameters = parameterString.c_str();
+        sensorParams.protocol = "camera.gmsl";
+    }
+    else if( (mCamInputParams.camInputMode == H264_FILE) || (mCamInputParams.camInputMode == RAW_FILE))
+    {
+        parameterString = std::string("video=") + mCamInputParams.filePath.c_str();
+
+        sensorParams.parameters = parameterString.c_str();
+
+        sensorParams.protocol = "camera.virtual";
     }
 
-
-    sensorParams.parameters = parameterString.c_str();
-    sensorParams.protocol = "camera.gmsl";
 
     status = dwSAL_createSensor(&mCamera, sensorParams, mSAL);
 
@@ -356,12 +375,47 @@ bool px2Cam::InitPipeline()
            ,mCamProp.resolution.y
            ,mCamProp.framerate);
 
+    // Raw pipeline setup
+    if( (mCamInputParams.camInputMode == GMSL_CAM_RAW) || (mCamInputParams.camInputMode == RAW_FILE) )
+    {
+        mISPoutput = DW_SOFTISP_PROCESS_TYPE_DEMOSAIC | DW_SOFTISP_PROCESS_TYPE_TONEMAP;
+
+        // Init software ISP
+        dwSoftISPParams softISPParams;
+        CHECK_DW_ERROR(dwSoftISP_initParamsFromCamera(&softISPParams, &mCamProp));
+        CHECK_DW_ERROR(dwSoftISP_initialize(&mISP, &softISPParams, mContext));
+
+        CHECK_DW_ERROR(dwSoftISP_setDemosaicMethod(DW_SOFTISP_DEMOSAIC_METHOD_INTERPOLATION, mISP));
+
+        // allocate memory for a demosaic image and bind it to the ISP
+        CHECK_DW_ERROR(dwSoftISP_getDemosaicImageProperties(&mRCBImgProp, mISP));
+        CHECK_DW_ERROR(dwImage_create(&mRCBImageHandle, mRCBImgProp, mContext));
+        CHECK_DW_ERROR(dwImage_getCUDA(&mCamImgCudaRCB, mRCBImageHandle));
+
+        CHECK_DW_ERROR(dwSoftISP_bindOutputDemosaic(mCamImgCudaRCB, mISP));
+    }
+
+
     // Initialize streamer
     dwImageProperties glImgProps{};
-    glImgProps.width = mCamProp.resolution.x;
-    glImgProps.height = mCamProp.resolution.y;
+
     glImgProps.format = DW_IMAGE_FORMAT_RGBA_UINT8;
     glImgProps.type = DW_IMAGE_CUDA;
+
+    if((mCamInputParams.camInputMode == GMSL_CAM_RAW) || (mCamInputParams.camInputMode == RAW_FILE))
+    {
+        glImgProps.width = mRCBImgProp.width;
+        glImgProps.height = mRCBImgProp.height;
+
+        CHECK_DW_ERROR(dwImage_create(&mFrameCUDAHandle, glImgProps, mContext));
+        CHECK_DW_ERROR(dwImage_getCUDA(&mCamImgCuda, mFrameCUDAHandle));
+        CHECK_DW_ERROR(dwSoftISP_bindOutputTonemap(mCamImgCuda, mISP));
+    }
+    else
+    {
+        glImgProps.width = mCamProp.resolution.x;
+        glImgProps.height = mCamProp.resolution.y;
+    }
 
     status = dwImageStreamer_initialize(&mStreamerCUDA2GL, &glImgProps, DW_IMAGE_GL, mContext);
 
@@ -381,11 +435,20 @@ bool px2Cam::InitPipeline()
         dwSerializerParams seriParams;
         seriParams.parameters = "";
         std::string seriParamsStr = "";
-        seriParamsStr += std::string("format=") + std::string(mArguments.get("serializer-type"));
-        seriParamsStr += std::string(",bitrate=") + std::string(mArguments.get("serializer-bitrate"));
-        seriParamsStr += std::string(",framerate=") + std::string(mArguments.get("serializer-framerate"));
-        seriParamsStr += std::string(",type=disk,file=") + std::string(mArguments.get("write-file"));
-        seriParamsStr += std::string(",slave=") + std::string(mArguments.get("slave"));
+
+        if(mCamInputParams.camInputMode == GMSL_CAM_YUV)
+        {
+            seriParamsStr += std::string("format=") + std::string(mArguments.get("serializer-type"));
+            seriParamsStr += std::string(",bitrate=") + std::string(mArguments.get("serializer-bitrate"));
+            seriParamsStr += std::string(",framerate=") + std::string(mArguments.get("serializer-framerate"));
+            seriParamsStr += std::string(",type=disk,file=") + std::string(mArguments.get("write-file"));
+            seriParamsStr += std::string(",slave=") + std::string(mArguments.get("slave"));
+        }
+        else if(mCamInputParams.camInputMode == GMSL_CAM_RAW)
+        {
+            seriParamsStr += std::string("format=") + "raw";
+            seriParamsStr += std::string(",type=disk,file=") + std::string(mArguments.get("write-file"));
+        }
 
         seriParams.parameters = seriParamsStr.c_str();
         seriParams.onData = nullptr;
@@ -461,42 +524,89 @@ bool px2Cam::UpdateCamImg()
 
 //    auto begin = std::chrono::high_resolution_clock::now();
 
-    status = dwSensorCamera_getImage(&mFrameCUDAHandle, DW_CAMERA_OUTPUT_CUDA_RGBA_UINT8, mFrameHandle);
-
-    if(status == DW_SUCCESS)
+    if((mCamInputParams.camInputMode == GMSL_CAM_YUV) || (mCamInputParams.camInputMode == H264_FILE))
     {
-//        cout << "[DW_PROC_STEP_2] Get CUDA frame handle success" << endl;
-    }
-    else
-    {
-        cout << "[DW_PROC_STEP_2] Get CUDA frame handle fail : " <<  dwGetStatusName(status) << endl;
-    }
-
-    if(mRecordCamera)
-    {
-        status = dwSensorSerializer_serializeCameraFrameAsync(mFrameHandle, mSerializer);
+        status = dwSensorCamera_getImage(&mFrameCUDAHandle, DW_CAMERA_OUTPUT_CUDA_RGBA_UINT8, mFrameHandle);
 
         if(status == DW_SUCCESS)
         {
-//            cout << "[DW_PROC_STEP_2.5] Serializing success" << endl;
+    //        cout << "[DW_PROC_STEP_2] Get CUDA frame handle success" << endl;
         }
         else
         {
-            cout << "[DW_PROC_STEP_2.5] Serializing fail : " <<  dwGetStatusName(status) << endl;
+            cout << "[DW_PROC_STEP_2] Get CUDA frame handle fail : " <<  dwGetStatusName(status) << endl;
         }
 
+        if(mRecordCamera)
+        {
+            status = dwSensorSerializer_serializeCameraFrameAsync(mFrameHandle, mSerializer);
+
+            if(status == DW_SUCCESS)
+            {
+    //            cout << "[DW_PROC_STEP_2.5] Serializing success" << endl;
+            }
+            else
+            {
+                cout << "[DW_PROC_STEP_2.5] Serializing fail : " <<  dwGetStatusName(status) << endl;
+            }
+
+        }
+
+        status = dwImage_getCUDA(&mCamImgCuda, mFrameCUDAHandle);
+
+        if(status == DW_SUCCESS)
+        {
+    //        cout << "[DW_PROC_STEP_3] Get CUDA frame success" << endl;
+        }
+        else
+        {
+            cout << "[DW_PROC_STEP_3] Get CUDA frame fail : " <<  dwGetStatusName(status) << endl;
+        }
+    }
+    else if( (mCamInputParams.camInputMode == GMSL_CAM_RAW) || (mCamInputParams.camInputMode == RAW_FILE))
+    {
+        status = dwSensorCamera_getImage(&mRawImageHandle, DW_CAMERA_OUTPUT_CUDA_RAW_UINT16, mFrameHandle);
+
+        if(status == DW_SUCCESS)
+        {
+//            cout << "[DW_PROC_STEP_2] Get Raw Image Handle success" << endl;
+        }
+        else
+        {
+            cout << "[DW_PROC_STEP_2] Get Raw Image Handle fail : " << dwGetStatusName(status) << endl;
+        }
+
+        if(mRecordCamera)
+        {
+            status = dwSensorSerializer_serializeCameraFrameAsync(mFrameHandle, mSerializer);
+            if(status == DW_BUFFER_FULL)
+            {
+                cout << "SensorSerializer failed to serialize data, aborting" << endl;
+                return -1;
+            }
+            else
+            {
+                CHECK_DW_ERROR(status);
+            }
+
+        }
+
+        status = dwImage_getCUDA(&mCamImgCudaRaw, mRawImageHandle);
+
+        if(status == DW_SUCCESS)
+        {
+            cout << "[DW_PROC_STEP_3] Get Raw CUDA frame success" << endl;
+        }
+        else
+        {
+            cout << "[DW_PROC_STEP_3] Get Raw CUDA frame failed : " << dwGetStatusName(status) << endl;
+        }
+
+        CHECK_DW_ERROR(dwSoftISP_bindInputRaw(mCamImgCudaRaw, mISP));
+        CHECK_DW_ERROR(dwSoftISP_setProcessType(mISPoutput, mISP));
+        CHECK_DW_ERROR(dwSoftISP_processDeviceAsync(mISP));
     }
 
-    status = dwImage_getCUDA(&mCamImgCuda, mFrameCUDAHandle);
-
-    if(status == DW_SUCCESS)
-    {
-//        cout << "[DW_PROC_STEP_3] Get CUDA frame success" << endl;
-    }
-    else
-    {
-        cout << "[DW_PROC_STEP_3] Get CUDA frame fail : " <<  dwGetStatusName(status) << endl;
-    }
 
     // Get Camera image capture time
     mCamTimestamp = mCamImgCuda->timestamp_us;

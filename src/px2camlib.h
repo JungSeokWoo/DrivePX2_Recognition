@@ -27,6 +27,7 @@
 #include <framework/Checks.hpp>
 #include <dw/renderer/RenderEngine.h>
 
+#include <dw/isp/SoftISP.h>
 
 #include "common_cv.h"
 
@@ -42,6 +43,18 @@ using namespace std;
 typedef enum { MASTER_TEGRA = 0,
                SLAVE_TEGRA = 1
 }dwTegraMode;
+
+typedef enum {GMSL_CAM_YUV = 0,
+              GMSL_CAM_RAW = 1,
+              H264_FILE = 2,
+              RAW_FILE = 3
+}dwCamInputMode;
+
+typedef struct {
+    dwCamInputMode camInputMode;
+    string filePath = "";
+}camInputParameters;
+
 
 typedef struct {
     float resizeRatio = 1.f;
@@ -76,11 +89,13 @@ public:
     ~px2Cam();
 
 public:
-    bool Init(imgCropParameters imgCropParams,
+    bool Init(camInputParameters camInputParams,
+              imgCropParameters imgCropParams,
               displayParameters dispParams,
               dwTegraMode tegraMode);
 
-    bool Init(imgCropParameters imgCropParams,
+    bool Init(camInputParameters camInputParams,
+              imgCropParameters imgCropParams,
               displayParameters dispParams,
               dwTegraMode tegraMode,
               const char* writePath);
@@ -103,6 +118,9 @@ public:
     matImgData GetOriMatImgData();
     dwImageCUDA* GetDwImageCuda();
 
+    void CoordTrans_Resize2Ori(int xIn, int yIn, int& xOut, int& yOut);
+    void CoordTrans_ResizeAndCrop2Ori(float xIn, float yIn, float &xOut, float &yOut);
+
 public:
     ProgramArguments mArguments;
 
@@ -116,9 +134,6 @@ protected:
 
     void ReleaseModules();
 
-private:
-    void CoordTrans_Resize2Ori(int xIn, int yIn, int& xOut, int& yOut);
-    void CoordTrans_ResizeAndCrop2Ori(int xIn, int yIn, int &xOut, int &yOut);
 
 private:
     dwContextHandle_t mContext = DW_NULL_HANDLE;
@@ -170,6 +185,17 @@ private:
 
     displayParameters mDispParams;
     dwImageGL* mImgGl;
+
+    camInputParameters mCamInputParams;
+
+    // For Raw
+    dwSoftISPHandle_t mISP = DW_NULL_HANDLE;
+    uint32_t mISPoutput;
+    dwImageCUDA* mCamImgCudaRaw;
+    dwImageCUDA* mCamImgCudaRCB;
+    dwImageHandle_t mRawImageHandle = DW_NULL_HANDLE;
+    dwImageHandle_t mRCBImageHandle = DW_NULL_HANDLE;
+    dwImageProperties mRCBImgProp{};
 
 };
 

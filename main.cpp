@@ -31,11 +31,20 @@ int main()
     dispParams.windowWidth = CAM_IMG_WIDTH/2;
     dispParams.windowHeight = CAM_IMG_HEIGHT/2;
 
+
+    // Main에서 바뀐부분 시작(px2camlib.h, px2camlib.cu도 교체 필요)--------------------------
+    camInputParameters camInputParams;
+    camInputParams.camInputMode = GMSL_CAM_RAW;
+
     // Camera library initialize
-    if(!px2CamObj.Init(imgCropParams,
+    if(!px2CamObj.Init(camInputParams,
+                       imgCropParams,
                        dispParams,
                        MASTER_TEGRA))
         return -1;
+
+    // Main에서 바뀐부분  끝 ----------------------------------------------------------------
+
 
     // Object Detector(DriveNet) initialize
     px2OD px2ODObj(&px2CamObj);
@@ -43,7 +52,6 @@ int main()
 
     // Lane Detector initialize
     px2LD px2LDObj(&px2CamObj);
-//    px2LDObj.Init(0.3f);
     px2LDObj.Init(0.3f,
                   "/home/nvidia/swjung/git/px2Recog/data/invRectMap.xml",
                   "/home/nvidia/swjung/git/px2Recog/data/ipmMat.xml");
@@ -101,6 +109,20 @@ int main()
             vector<dwVector2f> outputLDPtsRectified = px2LDObj.DistortList2RectifiedList(outputLDPtsPerLane[laneIdx]);
             vector<dwVector2f> outputLDPtsTopview = px2LDObj.RectifiedList2TopviewList(outputLDPtsRectified);
 
+            float minY = INT_MAX;
+            float maxY = INT_MIN;
+
+            for(uint ptIdx = 0; ptIdx < outputLDPtsTopview.size(); ptIdx++)
+            {
+                dwVector2f pt = outputLDPtsTopview[ptIdx];
+                if(pt.y > maxY)
+                    maxY = pt.y;
+
+                if(pt.y < minY)
+                    minY = pt.y;
+            }
+
+
             if (outputLDPtsTopview.size() < 4)
                 continue;
 
@@ -110,8 +132,14 @@ int main()
 
             for(uint y = 0; y < 500 ; y++)
             {
-                float x = outputLDEqs[0] + (float)y*outputLDEqs[1] + (float)y*y*outputLDEqs[2] + (float)y*y*y*outputLDEqs[3];
-                int xInt = (int) x;
+                float y_world = 50 - (float)y/10.f;
+
+                if( (y_world < minY) || (y_world > maxY))
+                    continue;
+
+                float x_world = outputLDEqs[0] + (float)y_world*outputLDEqs[1] + (float)y_world*y_world*outputLDEqs[2] + (float)y_world*y_world*y_world*outputLDEqs[3];
+                int xInt = x_world*10.f + 250;
+
 
                 if((xInt >= 0) && (xInt < topViewImg.cols))
                 {
