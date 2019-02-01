@@ -53,8 +53,8 @@ int main()
     // Lane Detector initialize
     px2LD px2LDObj(&px2CamObj);
     px2LDObj.Init(0.3f,
-                  "/home/nvidia/swjung/git/px2Recog/data/invRectMap.xml",
-                  "/home/nvidia/swjung/git/px2Recog/data/ipmMat.xml");
+                  "/home/nvidia/swjung/git/DrivePX2_Recognition/data/invRectMap.xml",
+                  "/home/nvidia/swjung/git/DrivePX2_Recognition/data/ipmMat.xml");
 
     while(1)
     {
